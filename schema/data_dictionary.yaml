@@ -1,0 +1,222 @@
+---
+# ============================================================
+# Inventory Shrinkage Detection – Data Dictionary
+# Seed: 20261022  |  Generated: 2026-10-27
+# ============================================================
+
+entities:
+
+  Store:
+    primary_key: store_id
+    id_format: "STORE-{6d}"
+    description: "A physical retail location."
+    fields:
+      store_id:        { type: string,  required: true,  unique: true,  example: "STORE-000001",  validation: "matches STORE-\\d{6}" }
+      name:            { type: string,  required: true,  unique: true,  example: "Riverside Grocery" }
+      city:            { type: string,  required: true }
+      state:           { type: string,  required: true,  allowed_values: [US state abbreviations] }
+      region:          { type: string,  required: true,  allowed_values: [Northeast, Southeast, Midwest, Southwest, West] }
+      format:          { type: string,  required: true,  allowed_values: [grocery, convenience, warehouse, specialty] }
+      opened_date:     { type: date,    required: true,  validation: "YYYY-MM-DD, <= 2026-01-01" }
+      status:          { type: string,  required: true,  allowed_values: [active, closed, remodeling] }
+      timezone:        { type: string,  required: true,  example: "America/New_York" }
+
+  SKU:
+    primary_key: sku_id
+    id_format: "SKU-{6d}"
+    description: "A stock-keeping unit (product)."
+    fields:
+      sku_id:             { type: string,  required: true,  unique: true,  example: "SKU-000001" }
+      name:               { type: string,  required: true }
+      category:           { type: string,  required: true,  allowed_values: ["Food & Beverage","Health & Beauty","Electronics","Home & Garden","Apparel","Sporting Goods"] }
+      subcategory:        { type: string,  required: true }
+      unit_cost:          { type: float,   required: true,  units: USD,  validation: "> 0" }
+      unit_price:         { type: float,   required: true,  units: USD,  validation: "> unit_cost" }
+      weight_kg:          { type: float,   required: false, units: kg,   validation: "> 0" }
+      is_high_value:      { type: boolean, required: true }
+      requires_age_verification: { type: boolean, required: true }
+      shelf_life_days:    { type: integer, required: false, units: days,  validation: "> 0 or null for non-perishable" }
+      status:             { type: string,  required: true,  allowed_values: [active, discontinued, seasonal] }
+
+  EmployeeRole:
+    primary_key: employee_id
+    id_format: "EMP-{6d}"
+    description: "An employee assigned to a store with a specific role."
+    fields:
+      employee_id:  { type: string,  required: true,  unique: true,  example: "EMP-000001" }
+      store_id:     { type: string,  required: true,  fk: Store.store_id }
+      first_name:   { type: string,  required: true }
+      last_name:    { type: string,  required: true }
+      role:         { type: string,  required: true,  allowed_values: [cashier, stocker, manager, security, analyst] }
+      hire_date:    { type: date,    required: true,  validation: "YYYY-MM-DD" }
+      status:       { type: string,  required: true,  allowed_values: [active, terminated, on_leave] }
+
+  Shift:
+    primary_key: shift_id
+    id_format: "SHF-{year}-{6d}"
+    description: "A scheduled work period for an employee at a store."
+    fields:
+      shift_id:    { type: string,  required: true,  unique: true,  example: "SHF-2026-000001" }
+      store_id:    { type: string,  required: true,  fk: Store.store_id }
+      employee_id: { type: string,  required: true,  fk: EmployeeRole.employee_id }
+      shift_date:  { type: date,    required: true }
+      start_time:  { type: time,    required: true }
+      end_time:    { type: time,    required: true,  validation: "end_time > start_time" }
+      role:        { type: string,  required: true,  allowed_values: [cashier, stocker, manager, security, analyst] }
+
+  Promotion:
+    primary_key: promo_id
+    id_format: "PRM-{year}-{6d}"
+    description: "A price promotion applied to a SKU at a store for a date range."
+    fields:
+      promo_id:     { type: string,  required: true,  unique: true,  example: "PRM-2026-000001" }
+      sku_id:       { type: string,  required: true,  fk: SKU.sku_id }
+      store_id:     { type: string,  required: true,  fk: Store.store_id }
+      promo_type:   { type: string,  required: true,  allowed_values: [bogo, percent_off, buy_x_get_y, clearance, seasonal] }
+      discount_pct: { type: float,   required: true,  units: percent, validation: "0 < x <= 100" }
+      start_date:   { type: date,    required: true }
+      end_date:     { type: date,    required: true,  validation: "end_date >= start_date" }
+      status:       { type: string,  required: true,  allowed_values: [active, expired, cancelled] }
+
+  InventoryMovement:
+    primary_key: movement_id
+    id_format: "MOV-{year}-{8d}"
+    description: "Any stock-level event for a SKU at a store."
+    fields:
+      movement_id:    { type: string,  required: true,  unique: true,  example: "MOV-2026-00000001" }
+      store_id:       { type: string,  required: true,  fk: Store.store_id }
+      sku_id:         { type: string,  required: true,  fk: SKU.sku_id }
+      movement_type:  { type: string,  required: true,  allowed_values: [receipt, sale, transfer_in, transfer_out, adjustment, return, shrinkage] }
+      quantity:       { type: integer, required: true,  validation: "!= 0; positive for inflows, negative for outflows" }
+      unit_cost:      { type: float,   required: true,  units: USD }
+      total_value:    { type: float,   required: true,  units: USD,  validation: "= abs(quantity) * unit_cost (derived)" }
+      shift_id:       { type: string,  required: false, fk: Shift.shift_id }
+      employee_id:    { type: string,  required: false, fk: EmployeeRole.employee_id }
+      timestamp:      { type: datetime,required: true,  validation: "within store operating hours" }
+      reason:         { type: string,  required: false, note: "required for adjustments (except edge-case EC-002)" }
+      reference_id:   { type: string,  required: false, note: "links transfer pairs or return to original sale" }
+      is_anomaly:     { type: boolean, required: true,  default: false }
+      anomaly_type:   { type: string,  required: false, note: "populated only when is_anomaly=true" }
+
+  CycleCount:
+    primary_key: count_id
+    id_format: "CNT-{year}-{6d}"
+    description: "A physical inventory count for a SKU at a store."
+    fields:
+      count_id:      { type: string,  required: true,  unique: true,  example: "CNT-2026-000001" }
+      store_id:      { type: string,  required: true,  fk: Store.store_id }
+      sku_id:        { type: string,  required: true,  fk: SKU.sku_id }
+      counted_by:    { type: string,  required: true,  fk: EmployeeRole.employee_id }
+      shift_id:      { type: string,  required: false, fk: Shift.shift_id }
+      count_datetime:{ type: datetime,required: true }
+      expected_qty:  { type: integer, required: true,  validation: "derived from sum of movements before count_datetime" }
+      actual_qty:    { type: integer, required: true,  validation: ">= 0" }
+      variance:      { type: integer, required: true,  validation: "= actual_qty - expected_qty (derived)" }
+      variance_pct:  { type: float,   required: true,  units: percent, validation: "= variance / expected_qty * 100 (derived)" }
+      variance_value:{ type: float,   required: true,  units: USD,     validation: "= abs(variance) * unit_cost (derived)" }
+      status:        { type: string,  required: true,  allowed_values: [clean, variance_low, variance_high, anomaly] }
+      notes:         { type: string,  required: false }
+
+  Return:
+    primary_key: return_id
+    id_format: "RET-{year}-{6d}"
+    description: "A customer or vendor return increasing inventory."
+    fields:
+      return_id:        { type: string,  required: true,  unique: true,  example: "RET-2026-000001" }
+      store_id:         { type: string,  required: true,  fk: Store.store_id }
+      sku_id:           { type: string,  required: true,  fk: SKU.sku_id }
+      original_movement_id: { type: string, required: false, fk: InventoryMovement.movement_id }
+      return_date:      { type: date,    required: true }
+      quantity:         { type: integer, required: true,  validation: "> 0" }
+      reason:           { type: string,  required: true,  allowed_values: [defective, wrong_item, changed_mind, damaged_in_transit, expired, duplicate_order] }
+      condition:        { type: string,  required: true,  allowed_values: [new, opened, damaged, expired] }
+      employee_id:      { type: string,  required: true,  fk: EmployeeRole.employee_id }
+      refund_amount:    { type: float,   required: true,  units: USD }
+
+  ShrinkageAlert:
+    primary_key: alert_id
+    id_format: "SHR-{year}-{6d}"
+    description: "An auto-generated alert when inventory loss exceeds thresholds."
+    fields:
+      alert_id:       { type: string,  required: true,  unique: true,  example: "SHR-2026-000001" }
+      store_id:       { type: string,  required: true,  fk: Store.store_id }
+      sku_id:         { type: string,  required: true,  fk: SKU.sku_id }
+      alert_date:     { type: date,    required: true }
+      alert_type:     { type: string,  required: true,  allowed_values: [cycle_count_variance, consecutive_adjustments, high_value_shrinkage, transfer_mismatch] }
+      severity:       { type: string,  required: true,  allowed_values: [low, medium, high, critical] }
+      trigger_value:  { type: float,   required: true,  note: "the metric value that crossed the threshold" }
+      threshold_value:{ type: float,   required: true,  note: "configured threshold" }
+      count_id:       { type: string,  required: false, fk: CycleCount.count_id }
+      status:         { type: string,  required: true,  allowed_values: [open, under_investigation, resolved, false_positive] }
+      assigned_to:    { type: string,  required: false, fk: EmployeeRole.employee_id }
+
+  Investigation:
+    primary_key: inv_id
+    id_format: "INV-{year}-{6d}"
+    description: "A formal investigation opened from a ShrinkageAlert."
+    fields:
+      inv_id:           { type: string,  required: true,  unique: true,  example: "INV-2026-000001" }
+      alert_id:         { type: string,  required: true,  fk: ShrinkageAlert.alert_id }
+      store_id:         { type: string,  required: true,  fk: Store.store_id }
+      opened_date:      { type: date,    required: true }
+      closed_date:      { type: date,    required: false, validation: "closed_date >= opened_date if not null" }
+      assigned_to:      { type: string,  required: true,  fk: EmployeeRole.employee_id }
+      finding:          { type: string,  required: false, allowed_values: [confirmed_theft, administrative_error, system_error, vendor_issue, unresolved, false_positive] }
+      resolution:       { type: string,  required: false, allowed_values: [disciplinary_action, process_improvement, vendor_claim, system_fix, closed_no_action, police_report] }
+      is_confirmed_theft:{ type: boolean,required: true,  default: false }
+      financial_impact: { type: float,   required: true,  units: USD,  default: 0.0 }
+
+relationships:
+  # Cardinality notation: 1 = exactly one, N = many (on that side of the arrow)
+  Store_to_EmployeeRole:      { cardinality: "1:N",  note: "One store has many employees; employee belongs to one store" }
+  Store_to_Shift:             { cardinality: "1:N",  note: "One store has many shifts" }
+  Store_to_Promotion:         { cardinality: "1:N",  note: "One store can have many promotions" }
+  Store_to_InventoryMovement: { cardinality: "1:N",  note: "One store has many movements" }
+  Store_to_CycleCount:        { cardinality: "1:N",  note: "One store has many cycle counts" }
+  Store_to_ShrinkageAlert:    { cardinality: "1:N",  note: "One store has many alerts" }
+  Store_to_Investigation:     { cardinality: "1:N",  note: "One store has many investigations" }
+  SKU_to_InventoryMovement:   { cardinality: "1:N",  note: "One SKU appears in many movements" }
+  SKU_to_CycleCount:          { cardinality: "1:N",  note: "One SKU is counted many times" }
+  SKU_to_Promotion:           { cardinality: "1:N",  note: "One SKU can have many promotions" }
+  Store_x_SKU_bridge:         { cardinality: "N:M",  note: "Many stores carry many SKUs; bridge table store_sku_map (store_id, sku_id) resolves this" }
+  EmployeeRole_to_Shift:      { cardinality: "1:N",  note: "One employee has many shifts" }
+  EmployeeRole_to_InventoryMovement: { cardinality: "1:N", note: "One employee records many movements" }
+  EmployeeRole_to_CycleCount: { cardinality: "1:N",  note: "One employee performs many cycle counts" }
+  Shift_to_InventoryMovement: { cardinality: "1:N",  note: "One shift can cover many movements (optional FK)" }
+  CycleCount_to_ShrinkageAlert: { cardinality: "1:1", note: "One threshold-crossing count triggers at most one alert" }
+  ShrinkageAlert_to_Investigation: { cardinality: "1:1", note: "Each high/critical alert has at most one investigation" }
+  InventoryMovement_to_Return:{ cardinality: "1:1",  note: "A sale can be referenced by at most one return" }
+
+StoreSkuMap:
+  primary_key: "[store_id, sku_id]  (composite)"
+  description: "Bridge table resolving the M:N relationship between Store and SKU. Each row represents one SKU stocked by one store."
+  fields:
+    store_id:   { type: string, required: true, fk: Store.store_id }
+    sku_id:     { type: string, required: true, fk: SKU.sku_id }
+    unit_cost:  { type: float,  required: true, units: USD, note: "denormalised from SKU for fast movement generation" }
+    unit_price: { type: float,  required: true, units: USD, note: "denormalised from SKU" }
+
+edge_cases:
+  EC-001:
+    description: "Movement references a store_id that does not own the SKU's store-SKU mapping"
+    affected_entity: InventoryMovement
+    anomaly_type: "wrong_store_reference"
+    count: 10
+
+  EC-002:
+    description: "Adjustment movement has null reason (should be populated)"
+    affected_entity: InventoryMovement
+    anomaly_type: "adjustment_missing_reason"
+    count: 15
+
+  EC-003:
+    description: "CycleCount.count_datetime is before the last InventoryMovement for that store-SKU"
+    affected_entity: CycleCount
+    anomaly_type: "count_precedes_movement"
+    count: 8
+
+  EC-004:
+    description: "Transfer recorded as shrinkage at both source and destination stores"
+    affected_entity: InventoryMovement
+    anomaly_type: "transfer_double_shrinkage"
+    count: 5
